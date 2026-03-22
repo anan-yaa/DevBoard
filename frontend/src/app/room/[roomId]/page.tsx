@@ -46,6 +46,7 @@ export default function RoomEditorPage() {
   const [content, setContent] = useState(DEFAULT_VALUE);
   const [roomUsers, setRoomUsers] = useState<string[]>([]);
   const [presenceLog, setPresenceLog] = useState<string[]>([]);
+  const [mySocketId, setMySocketId] = useState<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const roomIdRef = useRef<string | null>(null);
@@ -132,6 +133,7 @@ export default function RoomEditorPage() {
     setContent(DEFAULT_VALUE);
     setRoomUsers([]);
     setPresenceLog([]);
+    setMySocketId(null);
     prevRoomUsersRef.current = [];
     peerCursorsRef.current = {};
     decorationIdsRef.current = [];
@@ -199,11 +201,12 @@ export default function RoomEditorPage() {
     socket.on("room-users", onRoomUsers);
     socket.on("cursor-update", onCursorUpdate);
 
-    const join = () => {
+    const onConnect = () => {
+      setMySocketId(socket.id ?? null);
       socket.emit("join-room", roomId);
     };
-    if (socket.connected) join();
-    else socket.on("connect", join);
+    if (socket.connected) onConnect();
+    else socket.on("connect", onConnect);
 
     return () => {
       if (emitTimerRef.current) clearTimeout(emitTimerRef.current);
@@ -214,7 +217,7 @@ export default function RoomEditorPage() {
       socket.off("receive-message", onReceiveMessage);
       socket.off("room-users", onRoomUsers);
       socket.off("cursor-update", onCursorUpdate);
-      socket.off("connect", join);
+      socket.off("connect", onConnect);
       socket.close();
       socketRef.current = null;
     };
@@ -226,6 +229,15 @@ export default function RoomEditorPage() {
       cursorListenerDisposableRef.current = null;
     };
   }, []);
+
+  const copyRoomId = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      await navigator.clipboard.writeText(roomId);
+    } catch {
+      /* ignore */
+    }
+  }, [roomId]);
 
   const handleChange = useCallback((value: string | undefined) => {
     const next = value ?? "";
@@ -284,48 +296,37 @@ export default function RoomEditorPage() {
   );
 
   if (!roomId) {
-    return (
-      <p style={{ padding: 16, fontFamily: "system-ui, sans-serif" }}>
-        Invalid room URL.
-      </p>
-    );
+    return <div className="room-invalid">Invalid room URL.</div>;
   }
 
   return (
-    <div
-      style={{
-        height: "100vh",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <header
-        style={{
-          flexShrink: 0,
-          padding: "8px 12px",
-          borderBottom: "1px solid #ccc",
-          fontSize: 14,
-          color: "#444",
-          fontFamily: "system-ui, sans-serif",
-        }}
-      >
-        Room: <strong>{roomId}</strong>
-        {" · "}
-        <span>{roomUsers.length} user{roomUsers.length === 1 ? "" : "s"}</span>
+    <div className="room-page">
+      <header className="room-header">
+        <div className="room-header__left">
+          <span className="room-header__label">Room</span>
+          <span className="room-header__room-id">{roomId}</span>
+        </div>
+        <div className="room-header__right">
+          <span className="room-header__count">
+            <strong>{roomUsers.length}</strong>
+            {roomUsers.length === 1 ? " user" : " users"} online
+          </span>
+          <button
+            type="button"
+            className="room-btn room-btn--primary"
+            onClick={() => void copyRoomId()}
+          >
+            Copy room ID
+          </button>
+        </div>
       </header>
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "row",
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+      <div className="room-main">
+        <div className="room-editor-wrap">
           <Editor
             key={roomId}
             height="100%"
+            theme="vs-dark"
             defaultLanguage="javascript"
             value={content}
             onChange={handleChange}
@@ -333,35 +334,41 @@ export default function RoomEditorPage() {
           />
         </div>
 
-        <aside
-          style={{
-            width: 240,
-            flexShrink: 0,
-            borderLeft: "1px solid #ccc",
-            padding: 12,
-            fontFamily: "system-ui, sans-serif",
-            fontSize: 13,
-            overflow: "auto",
-            background: "#fafafa",
-          }}
-        >
-          <p style={{ margin: "0 0 8px", fontWeight: 600 }}>
-            In room ({roomUsers.length})
-          </p>
-          <ul style={{ margin: "0 0 16px", paddingLeft: 18 }}>
-            {roomUsers.map((id) => (
-              <li key={id} style={{ wordBreak: "break-all", marginBottom: 4 }}>
-                {id}
+        <aside className="room-sidebar">
+          <h2 className="room-sidebar__title">Users</h2>
+          <ul className="room-user-list">
+            {roomUsers.length === 0 ? (
+              <li className="room-user-item room-user-item--placeholder">
+                Waiting for room data…
               </li>
-            ))}
+            ) : (
+              roomUsers.map((id) => {
+                const isSelf = mySocketId !== null && id === mySocketId;
+                return (
+                  <li
+                    key={id}
+                    className={`room-user-item${isSelf ? " room-user-item--self" : ""}`}
+                  >
+                    {isSelf ? (
+                      <span className="room-user-item__you">You</span>
+                    ) : null}
+                    {id}
+                  </li>
+                );
+              })
+            )}
           </ul>
-          <p style={{ margin: "0 0 8px", fontWeight: 600 }}>Activity</p>
-          <ul style={{ margin: 0, paddingLeft: 18, color: "#555" }}>
-            {presenceLog.map((line, i) => (
-              <li key={`${i}-${line}`} style={{ marginBottom: 4 }}>
-                {line}
-              </li>
-            ))}
+
+          <hr className="room-sidebar__divider" />
+          <h3 className="room-activity__title">Activity</h3>
+          <ul className="room-activity__list">
+            {presenceLog.length === 0 ? (
+              <li>Join events will appear here.</li>
+            ) : (
+              presenceLog.map((line, i) => (
+                <li key={`${i}-${line}`}>{line}</li>
+              ))
+            )}
           </ul>
         </aside>
       </div>
