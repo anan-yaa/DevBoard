@@ -2,9 +2,14 @@ import type { ReactNode } from "react";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" style={{ height: "100%" }} suppressHydrationWarning>
       <body
-        style={{ fontFamily: "system-ui, sans-serif", margin: 24 }}
+        style={{
+          fontFamily: "system-ui, sans-serif",
+          margin: 0,
+          height: "100%",
+          overflow: "hidden",
+        }}
         suppressHydrationWarning
       >
         {children}
