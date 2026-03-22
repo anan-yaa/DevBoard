@@ -74,6 +74,30 @@ io.on("connection", (socket) => {
     }
     socket.to(roomId).emit("receive-message", { message });
   });
+
+  socket.on("cursor-move", (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    const { roomId, position } = payload as Record<string, unknown>;
+    if (typeof roomId !== "string" || !roomId) {
+      return;
+    }
+    if (!position || typeof position !== "object") {
+      return;
+    }
+    const { lineNumber, column } = position as Record<string, unknown>;
+    if (typeof lineNumber !== "number" || typeof column !== "number") {
+      return;
+    }
+    if (!Number.isFinite(lineNumber) || !Number.isFinite(column)) {
+      return;
+    }
+    socket.to(roomId).emit("cursor-update", {
+      userId: socket.id,
+      position: { lineNumber, column },
+    });
+  });
 });
 
 const PORT = 5000;

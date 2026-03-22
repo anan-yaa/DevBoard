@@ -1,0 +1,40 @@
+/* Remote cursor: highlight following character */
+.peer-caret-0 {
+  background-color: rgba(220, 60, 60, 0.35);
+}
+.peer-caret-1 {
+  background-color: rgba(50, 130, 220, 0.35);
+}
+.peer-caret-2 {
+  background-color: rgba(40, 160, 90, 0.35);
+}
+.peer-caret-3 {
+  background-color: rgba(180, 100, 220, 0.35);
+}
+.peer-caret-4 {
+  background-color: rgba(220, 140, 40, 0.35);
+}
+.peer-caret-5 {
+  background-color: rgba(30, 170, 170, 0.35);
+}
+
+/* End-of-line: thin bar before virtual caret */
+.peer-caret-eol.peer-caret-0 {
+  border-left: 2px solid rgb(200, 50, 50);
+  box-sizing: border-box;
+}
+.peer-caret-eol.peer-caret-1 {
+  border-left: 2px solid rgb(40, 110, 200);
+}
+.peer-caret-eol.peer-caret-2 {
+  border-left: 2px solid rgb(30, 130, 70);
+}
+.peer-caret-eol.peer-caret-3 {
+  border-left: 2px solid rgb(150, 70, 190);
+}
+.peer-caret-eol.peer-caret-4 {
+  border-left: 2px solid rgb(190, 110, 30);
+}
+.peer-caret-eol.peer-caret-5 {
+  border-left: 2px solid rgb(20, 140, 140);
+}
