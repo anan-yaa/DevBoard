@@ -19,15 +19,49 @@ const io = new Server(httpServer, {
   },
 });
 
+/** In-memory: each roomId -> socket ids currently joined (mirrors join-room / disconnect). */
+const roomSocketIds = new Map<string, Set<string>>();
+
+function addSocketToRoom(roomId: string, socketId: string) {
+  let set = roomSocketIds.get(roomId);
+  if (!set) {
+    set = new Set();
+    roomSocketIds.set(roomId, set);
+  }
+  set.add(socketId);
+}
+
+function removeSocketFromRoom(roomId: string, socketId: string) {
+  const set = roomSocketIds.get(roomId);
+  if (!set) return;
+  set.delete(socketId);
+  if (set.size === 0) roomSocketIds.delete(roomId);
+}
+
+function emitRoomUsers(roomId: string) {
+  const socketIds = [...(roomSocketIds.get(roomId) ?? [])];
+  io.to(roomId).emit("room-users", { socketIds });
+}
+
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
+
+  socket.on("disconnecting", () => {
+    for (const roomId of socket.rooms) {
+      if (roomId === socket.id) continue;
+      removeSocketFromRoom(roomId, socket.id);
+      emitRoomUsers(roomId);
+    }
+  });
 
   socket.on("join-room", async (roomId: unknown) => {
     if (typeof roomId !== "string" || !roomId) {
       return;
     }
     await socket.join(roomId);
+    addSocketToRoom(roomId, socket.id);
     console.log(`User ${socket.id} joined room "${roomId}"`);
+    emitRoomUsers(roomId);
   });
 
   socket.on("send-message", (payload: unknown) => {
