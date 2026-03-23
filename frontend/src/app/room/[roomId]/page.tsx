@@ -31,14 +31,6 @@ function roomIdFromParams(params: ReturnType<typeof useParams>): string | null {
   return null;
 }
 
-function peerColorClass(userId: string): string {
-  let h = 0;
-  for (let i = 0; i < userId.length; i++) {
-    h = (h * 31 + userId.charCodeAt(i)) | 0;
-  }
-  return `peer-caret-${Math.abs(h) % 6}`;
-}
-
 export default function RoomEditorPage() {
   const params = useParams();
   const roomId = roomIdFromParams(params);
@@ -47,6 +39,9 @@ export default function RoomEditorPage() {
   const [roomUsers, setRoomUsers] = useState<string[]>([]);
   const [presenceLog, setPresenceLog] = useState<string[]>([]);
   const [mySocketId, setMySocketId] = useState<string | null>(null);
+  const [remoteCursors, setRemoteCursors] = useState<Record<string, CursorPos>>(
+    {},
+  );
 
   const socketRef = useRef<Socket | null>(null);
   const roomIdRef = useRef<string | null>(null);
@@ -54,8 +49,6 @@ export default function RoomEditorPage() {
   const skipEmitForValueRef = useRef<string | null>(null);
   const prevRoomUsersRef = useRef<string[]>([]);
 
-  /** Remote users' cursors only — updated on socket events; no React state to avoid re-renders. */
-  const peerCursorsRef = useRef<Record<string, CursorPos>>({});
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const decorationIdsRef = useRef<string[]>([]);
@@ -64,65 +57,7 @@ export default function RoomEditorPage() {
   );
   const cursorRafRef = useRef<number | null>(null);
   const pendingCursorRef = useRef<CursorPos | null>(null);
-
-  const applyPeerDecorationsRef = useRef<() => void>(() => {});
   const applyIncomingCodeRef = useRef<(code: string) => void>(() => {});
-
-  const applyPeerDecorations = useCallback(() => {
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
-    if (!editor || !monaco) return;
-
-    const model = editor.getModel();
-    if (!model) return;
-
-    const selfId = socketRef.current?.id;
-    const decs: editor.IModelDeltaDecoration[] = [];
-
-    for (const [userId, pos] of Object.entries(peerCursorsRef.current)) {
-      if (userId === selfId) continue;
-
-      const lineCount = model.getLineCount();
-      const line = Math.min(Math.max(1, pos.lineNumber), lineCount);
-      const maxCol = model.getLineMaxColumn(line);
-      const col = Math.min(Math.max(1, pos.column), maxCol);
-      const color = peerColorClass(userId);
-
-      if (col < maxCol) {
-        decs.push({
-          range: new monaco.Range(line, col, line, col + 1),
-          options: {
-            stickiness:
-              monaco.editor.TrackedRangeStickiness
-                .NeverGrowsWhenTypingAtEdges,
-            inlineClassName: `peer-caret ${color}`,
-          },
-        });
-      } else {
-        decs.push({
-          range: new monaco.Range(line, col, line, col),
-          options: {
-            stickiness:
-              monaco.editor.TrackedRangeStickiness
-                .NeverGrowsWhenTypingAtEdges,
-            before: {
-              content: "\u200b",
-              inlineClassName: `peer-caret-eol ${color}`,
-            },
-          },
-        });
-      }
-    }
-
-    decorationIdsRef.current = editor.deltaDecorations(
-      decorationIdsRef.current,
-      decs,
-    );
-  }, []);
-
-  useLayoutEffect(() => {
-    applyPeerDecorationsRef.current = applyPeerDecorations;
-  }, [applyPeerDecorations]);
 
   const applyIncomingCode = useCallback((code: string) => {
     skipEmitForValueRef.current = code;
@@ -138,6 +73,35 @@ export default function RoomEditorPage() {
   }, [applyIncomingCode]);
 
   useEffect(() => {
+    const ed = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!ed || !monaco) return;
+
+    const model = ed.getModel();
+    if (!model) return;
+
+    const lineCount = model.getLineCount();
+    const nextDecorations: editor.IModelDeltaDecoration[] = [];
+    for (const [userId, pos] of Object.entries(remoteCursors)) {
+      if (mySocketId && userId === mySocketId) continue;
+      const line = Math.min(Math.max(1, pos.lineNumber), lineCount);
+      const maxCol = model.getLineMaxColumn(line);
+      const col = Math.min(Math.max(1, pos.column), Math.max(1, maxCol - 1));
+      nextDecorations.push({
+        range: new monaco.Range(line, col, line, col + 1),
+        options: {
+          className: "remote-cursor",
+        },
+      });
+    }
+
+    decorationIdsRef.current = ed.deltaDecorations(
+      decorationIdsRef.current,
+      nextDecorations,
+    );
+  }, [remoteCursors, mySocketId]);
+
+  useEffect(() => {
     roomIdRef.current = roomId;
   }, [roomId]);
 
@@ -148,8 +112,8 @@ export default function RoomEditorPage() {
     setRoomUsers([]);
     setPresenceLog([]);
     setMySocketId(null);
+    setRemoteCursors({});
     prevRoomUsersRef.current = [];
-    peerCursorsRef.current = {};
     decorationIdsRef.current = [];
 
     const socket = io(SOCKET_URL);
@@ -178,12 +142,12 @@ export default function RoomEditorPage() {
       prevRoomUsersRef.current = next;
       setRoomUsers(next);
 
-      for (const uid of Object.keys(peerCursorsRef.current)) {
-        if (!next.includes(uid)) {
-          delete peerCursorsRef.current[uid];
-        }
-      }
-      applyPeerDecorationsRef.current();
+      setRemoteCursors((prevCursors) => {
+        const filtered = Object.fromEntries(
+          Object.entries(prevCursors).filter(([uid]) => next.includes(uid)),
+        ) as Record<string, CursorPos>;
+        return filtered;
+      });
 
       if (prev.length === 0) return;
 
@@ -205,14 +169,17 @@ export default function RoomEditorPage() {
       position?: unknown;
     }) => {
       if (typeof data.userId !== "string") return;
+      const userId = data.userId;
       const pos = data.position;
       if (!pos || typeof pos !== "object") return;
       const { lineNumber, column } = pos as Record<string, unknown>;
       if (typeof lineNumber !== "number" || typeof column !== "number") {
         return;
       }
-      peerCursorsRef.current[data.userId] = { lineNumber, column };
-      applyPeerDecorationsRef.current();
+      setRemoteCursors((prev) => ({
+        ...prev,
+        [userId]: { lineNumber, column },
+      }));
     };
 
     socket.on("load-code", onLoadCode);
@@ -240,6 +207,10 @@ export default function RoomEditorPage() {
       socket.off("connect", onConnect);
       socket.close();
       socketRef.current = null;
+      decorationIdsRef.current = editorRef.current?.deltaDecorations(
+        decorationIdsRef.current,
+        [],
+      ) ?? [];
     };
   }, [roomId]);
 
@@ -309,8 +280,6 @@ export default function RoomEditorPage() {
           });
         },
       );
-
-      applyPeerDecorationsRef.current();
     },
     [],
   );

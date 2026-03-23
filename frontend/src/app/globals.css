@@ -1,3 +1,9 @@
+.remote-cursor {
+  border-left: 2px solid red;
+  margin-left: -1px;
+  height: 100%;
+}
+
 /* Remote cursor: highlight following character */
 .peer-caret-0 {
   background-color: rgba(220, 60, 60, 0.35);
