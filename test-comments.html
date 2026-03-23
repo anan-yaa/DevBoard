@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Comments</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        button { padding: 10px; margin: 5px; }
+        #log { background: #f5f5f5; padding: 10px; height: 200px; overflow-y: scroll; }
+    </style>
+</head>
+<body>
+    <h1>Comment System Test</h1>
+    
+    <div class="test-section">
+        <h3>Test Room: test-room-123</h3>
+        <button onclick="joinRoom()">Join Room</button>
+        <button onclick="addComment()">Add Comment</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+
+    <div class="test-section">
+        <h3>Event Log:</h3>
+        <div id="log"></div>
+    </div>
+
+    <script src="http://localhost:5000/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io('http://localhost:5000');
+        const log = document.getElementById('log');
+        
+        function logMessage(msg) {
+            log.innerHTML += new Date().toLocaleTimeString() + ': ' + msg + '<br>';
+            log.scrollTop = log.scrollHeight;
+        }
+
+        socket.on('connect', () => {
+            logMessage('Connected to server. Socket ID: ' + socket.id);
+        });
+
+        socket.on('disconnect', () => {
+            logMessage('Disconnected from server');
+        });
+
+        socket.on('load-comments', (comments) => {
+            logMessage('Loaded comments: ' + JSON.stringify(comments, null, 2));
+        });
+
+        socket.on('new-comment', (comment) => {
+            logMessage('Received new comment: ' + JSON.stringify(comment, null, 2));
+        });
+
+        socket.on('room-users', (data) => {
+            logMessage('Room users updated: ' + JSON.stringify(data));
+        });
+
+        function joinRoom() {
+            socket.emit('join-room', 'test-room-123');
+            logMessage('Joined room test-room-123');
+        }
+
+        function addComment() {
+            const comment = {
+                roomId: 'test-room-123',
+                lineNumber: Math.floor(Math.random() * 10) + 1,
+                text: 'Test comment ' + Date.now(),
+                userId: socket.id
+            };
+            socket.emit('add-comment', comment);
+            logMessage('Sent comment: ' + JSON.stringify(comment, null, 2));
+        }
+
+        function disconnect() {
+            socket.disconnect();
+        }
+    </script>
+</body>
+</html>

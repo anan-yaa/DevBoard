@@ -23,6 +23,13 @@ const DEFAULT_VALUE = "// Start coding...";
 const EMIT_DEBOUNCE_MS = 150;
 
 type CursorPos = { lineNumber: number; column: number };
+type ReviewComment = {
+  id: string;
+  lineNumber: number;
+  text: string;
+  userId: string;
+  username: string;
+};
 
 function roomIdFromParams(params: ReturnType<typeof useParams>): string | null {
   const raw = params.roomId;
@@ -31,30 +38,46 @@ function roomIdFromParams(params: ReturnType<typeof useParams>): string | null {
   return null;
 }
 
+function generateUsername(): string {
+  const adjectives = ["Quick", "Bright", "Clever", "Swift", "Smart", "Kind", "Bold", "Cool"];
+  const animals = ["Fox", "Bear", "Eagle", "Wolf", "Lion", "Tiger", "Hawk", "Owl"];
+  const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  const randomAnimal = animals[Math.floor(Math.random() * animals.length)];
+  const randomNum = Math.floor(Math.random() * 1000);
+  return `${randomAdj}${randomAnimal}${randomNum}`;
+}
+
 export default function RoomEditorPage() {
   const params = useParams();
   const roomId = roomIdFromParams(params);
 
   const [content, setContent] = useState(DEFAULT_VALUE);
-  const [roomUsers, setRoomUsers] = useState<string[]>([]);
+  const [roomUsers, setRoomUsers] = useState<{id: string, username: string}[]>([]);
   const [presenceLog, setPresenceLog] = useState<string[]>([]);
   const [mySocketId, setMySocketId] = useState<string | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<Record<string, CursorPos>>(
     {},
   );
+  const [comments, setComments] = useState<ReviewComment[]>([]);
+  const [selectedLine, setSelectedLine] = useState<number | null>(null);
+  // CHALLENGE 11: Username generation was inconsistent on every render
+// SOLUTION: Used useRef to generate username ONCE per user session
+const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
 
   const socketRef = useRef<Socket | null>(null);
   const roomIdRef = useRef<string | null>(null);
   const emitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipEmitForValueRef = useRef<string | null>(null);
-  const prevRoomUsersRef = useRef<string[]>([]);
+  const prevRoomUsersRef = useRef<{id: string, username: string}[]>([]);
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const decorationIdsRef = useRef<string[]>([]);
+  const commentDecorationIdsRef = useRef<string[]>([]);
   const cursorListenerDisposableRef = useRef<{ dispose: () => void } | null>(
     null,
   );
+  const commentClickDisposableRef = useRef<{ dispose: () => void } | null>(null);
   const cursorRafRef = useRef<number | null>(null);
   const pendingCursorRef = useRef<CursorPos | null>(null);
   const applyIncomingCodeRef = useRef<(code: string) => void>(() => {});
@@ -101,6 +124,57 @@ export default function RoomEditorPage() {
     );
   }, [remoteCursors, mySocketId]);
 
+  // CHALLENGE 12: Monaco hover was not working for inline comments
+  // SOLUTION: Fixed decoration range and enabled hover in editor options
+  useEffect(() => {
+    if (!editorRef.current || !monacoRef.current) return;
+    
+    console.log("Comments state:", comments.length, "comments");
+    console.log("Updating hover decorations for", comments.length, "comments");
+
+    const monaco = monacoRef.current;
+    
+    // CHALLENGE 13: Multiple comments on same line were creating duplicate decorations
+    // SOLUTION: Group comments by line number and create one decoration per line
+    const groupedComments = new Map<number, ReviewComment[]>();
+    comments.forEach(comment => {
+      const line = comment.lineNumber;
+      if (!groupedComments.has(line)) {
+        groupedComments.set(line, []);
+      }
+      groupedComments.get(line)!.push(comment);
+    });
+
+    // CHALLENGE 14: Hover messages had poor formatting and no spacing
+    // SOLUTION: Used markdown formatting with separators between comments
+    const decorations = Array.from(groupedComments.entries()).map(([lineNumber, lineComments]) => ({
+      // CHALLENGE 15: Decoration range was too narrow, hover wasn't triggering
+      // SOLUTION: Extended range to full line width (column 1000) for better hover detection
+      range: new monaco.Range(
+        lineNumber,
+        1,
+        lineNumber,
+        1000
+      ),
+      options: {
+        isWholeLine: true,
+        className: "commented-line",
+        glyphMarginClassName: "comment-glyph",
+        hoverMessage: {
+          value: lineComments
+            .map(c => `**💬 ${c.text}**\n_${c.username}_`)
+            .join("\n\n---\n\n")
+        }
+      }
+    }));
+
+    console.log("Applied", decorations.length, "hover decorations for", groupedComments.size, "lines");
+    commentDecorationIdsRef.current = editorRef.current.deltaDecorations(
+      commentDecorationIdsRef.current,
+      decorations
+    );
+  }, [comments]);
+
   useEffect(() => {
     roomIdRef.current = roomId;
   }, [roomId]);
@@ -113,8 +187,10 @@ export default function RoomEditorPage() {
     setPresenceLog([]);
     setMySocketId(null);
     setRemoteCursors({});
+    setComments([]);
     prevRoomUsersRef.current = [];
     decorationIdsRef.current = [];
+    commentDecorationIdsRef.current = [];
 
     const socket = io(SOCKET_URL);
     socketRef.current = socket;
@@ -129,11 +205,30 @@ export default function RoomEditorPage() {
       applyIncomingCodeRef.current(data.code);
     };
 
-    const onRoomUsers = (data: { socketIds?: unknown }) => {
-      const raw = data?.socketIds;
+    const onLoadComments = (payload: unknown) => {
+      if (!Array.isArray(payload)) return;
+      const parsed = payload.filter((item): item is ReviewComment => {
+        if (!item || typeof item !== "object") return false;
+        const rec = item as Record<string, unknown>;
+        return (
+          typeof rec.id === "string" &&
+          typeof rec.userId === "string" &&
+          typeof rec.text === "string" &&
+          typeof rec.lineNumber === "number"
+        );
+      });
+      setComments(parsed);
+    };
+
+    const onRoomUsers = (data: { users?: unknown }) => {
+      const raw = data?.users;
       if (
         !Array.isArray(raw) ||
-        !raw.every((id): id is string => typeof id === "string")
+        !raw.every((user): user is {id: string, username: string} => 
+          typeof user === "object" && 
+          typeof user.id === "string" && 
+          typeof user.username === "string"
+        )
       ) {
         return;
       }
@@ -143,21 +238,22 @@ export default function RoomEditorPage() {
       setRoomUsers(next);
 
       setRemoteCursors((prevCursors) => {
+        const userIds = next.map(u => u.id);
         const filtered = Object.fromEntries(
-          Object.entries(prevCursors).filter(([uid]) => next.includes(uid)),
+          Object.entries(prevCursors).filter(([uid]) => userIds.includes(uid)),
         ) as Record<string, CursorPos>;
         return filtered;
       });
 
       if (prev.length === 0) return;
 
-      const prevSet = new Set(prev);
-      const nextSet = new Set(next);
-      const joined = next.filter((id) => !prevSet.has(id));
-      const left = prev.filter((id) => !nextSet.has(id));
+      const prevIds = new Set(prev.map(u => u.id));
+      const nextIds = new Set(next.map(u => u.id));
+      const joined = next.filter((u) => !prevIds.has(u.id));
+      const left = prev.filter((u) => !nextIds.has(u.id));
       const lines = [
-        ...joined.map((id) => `User joined · ${id}`),
-        ...left.map((id) => `User left · ${id}`),
+        ...joined.map((u) => `User joined · ${u.username}`),
+        ...left.map((u) => `User left · ${u.username}`),
       ];
       if (lines.length) {
         setPresenceLog((log) => [...log, ...lines].slice(-40));
@@ -182,14 +278,64 @@ export default function RoomEditorPage() {
       }));
     };
 
+    // CHALLENGE 16: Comments were appearing multiple times (duplicates)
+  // SOLUTION: Removed direct local state updates, only update via socket events
+  const onNewComment = (comment: unknown) => {
+    console.log("🔥 RECEIVED new-comment event:", comment);
+    if (!comment || typeof comment !== "object") return;
+    const rec = comment as Record<string, unknown>;
+    if (
+      typeof rec.id !== "string" ||
+      typeof rec.userId !== "string" ||
+      typeof rec.text !== "string" ||
+      typeof rec.lineNumber !== "number" ||
+      typeof rec.username !== "string"
+    ) {
+      console.log("❌ Invalid comment format:", rec);
+      return;
+    }
+    const parsed: ReviewComment = {
+      id: rec.id,
+      userId: rec.userId,
+      text: rec.text,
+      lineNumber: rec.lineNumber,
+      username: rec.username,
+    };
+    
+    console.log("📝 Processing comment:", parsed);
+    setComments((prev) => {
+      console.log("Current comments:", prev.length);
+      console.log("Checking for duplicate ID:", parsed.id);
+      
+      // CHALLENGE 17: Duplicate prevention was failing due to weak ID checking
+      // SOLUTION: Strict ID-based duplicate prevention with detailed logging
+      if (prev.some((c) => c.id === parsed.id)) {
+        console.log("🚫 Duplicate comment prevented:", parsed.id);
+        return prev;
+      }
+      
+      console.log("✅ Adding new comment:", parsed);
+      const newComments = [...prev, parsed];
+      console.log("📊 Total comments after adding:", newComments.length);
+      return newComments;
+    });
+  };
+
     socket.on("load-code", onLoadCode);
+    socket.on("load-comments", onLoadComments);
     socket.on("code-change", onCodeChange);
     socket.on("room-users", onRoomUsers);
     socket.on("cursor-update", onCursorUpdate);
+    socket.on("new-comment", onNewComment);
+    
+    console.log("🔌 Socket listeners set up. Connected:", socket.connected);
+    console.log("🏠 Listening for new-comment events...");
 
+    // CHALLENGE 18: Join-room payload needed to include username for unified identity
+    // SOLUTION: Updated emit to include username from useRef
     const onConnect = () => {
       setMySocketId(socket.id ?? null);
-      socket.emit("join-room", roomId);
+      socket.emit("join-room", { roomId, username: username.current });
     };
     if (socket.connected) onConnect();
     else socket.on("connect", onConnect);
@@ -201,14 +347,20 @@ export default function RoomEditorPage() {
         cursorRafRef.current = null;
       }
       socket.off("load-code", onLoadCode);
+      socket.off("load-comments", onLoadComments);
       socket.off("code-change", onCodeChange);
       socket.off("room-users", onRoomUsers);
       socket.off("cursor-update", onCursorUpdate);
+      socket.off("new-comment", onNewComment);
       socket.off("connect", onConnect);
       socket.close();
       socketRef.current = null;
       decorationIdsRef.current = editorRef.current?.deltaDecorations(
         decorationIdsRef.current,
+        [],
+      ) ?? [];
+      commentDecorationIdsRef.current = editorRef.current?.deltaDecorations(
+        commentDecorationIdsRef.current,
         [],
       ) ?? [];
     };
@@ -217,7 +369,9 @@ export default function RoomEditorPage() {
   useEffect(() => {
     return () => {
       cursorListenerDisposableRef.current?.dispose();
+      commentClickDisposableRef.current?.dispose();
       cursorListenerDisposableRef.current = null;
+      commentClickDisposableRef.current = null;
     };
   }, []);
 
@@ -257,6 +411,13 @@ export default function RoomEditorPage() {
       editorRef.current = ed;
       monacoRef.current = monaco;
       decorationIdsRef.current = [];
+      commentDecorationIdsRef.current = [];
+
+      // Ensure hover is enabled and glyph margin is set
+      ed.updateOptions({
+        hover: { enabled: true },
+        glyphMargin: true
+      });
 
       cursorListenerDisposableRef.current?.dispose();
       cursorListenerDisposableRef.current = ed.onDidChangeCursorPosition(
@@ -280,8 +441,70 @@ export default function RoomEditorPage() {
           });
         },
       );
+
+      commentClickDisposableRef.current?.dispose();
+      commentClickDisposableRef.current = ed.onMouseDown((event) => {
+        const clickedLine = event.target.position?.lineNumber;
+        if (!clickedLine) return;
+        
+        // Check if this line has comments
+        const lineComments = comments.filter(c => c.lineNumber === clickedLine);
+        
+        if (lineComments.length > 0) {
+          setSelectedLine(clickedLine);
+          console.log(`Line ${clickedLine} has ${lineComments.length} comment(s):`, lineComments);
+          return;
+        }
+        
+        // If no comments on this line, add a new comment
+        const text = window.prompt(`Add comment on line ${clickedLine}`);
+        const trimmed = text?.trim();
+        if (!trimmed) return;
+
+        // Check for duplicate comment (same text, same line, same user)
+        const isDuplicate = comments.some(c => 
+          c.lineNumber === clickedLine && 
+          c.text === trimmed && 
+          c.userId === uid
+        );
+        
+        if (isDuplicate) {
+          alert("You already added this comment to this line!");
+          return;
+        }
+
+        const sock = socketRef.current;
+        const rid = roomIdRef.current;
+        const uid = sock?.id;
+        if (!sock?.connected || !rid || !uid) return;
+
+        // CHALLENGE 19: Comment creation was causing duplicates due to local state updates
+        // SOLUTION: Removed setComments call, rely only on socket event for state updates
+        const local: ReviewComment = {
+          id: `${uid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          lineNumber: clickedLine,
+          text: trimmed,
+          userId: uid,
+          username: username.current, // CHALLENGE 20: Username consistency - use same username from useRef
+        };
+        console.log("Emitting add-comment:", {
+          roomId: rid,
+          lineNumber: clickedLine,
+          text: trimmed,
+          userId: uid,
+          username: username.current,
+        });
+        // Remove direct setComments - only update via socket event
+        sock.emit("add-comment", {
+          roomId: rid,
+          lineNumber: clickedLine,
+          text: trimmed,
+          userId: uid,
+          username: username.current,
+        });
+      });
     },
-    [],
+    [comments],
   );
 
   if (!roomId) {
@@ -320,6 +543,12 @@ export default function RoomEditorPage() {
             value={content}
             onChange={handleChange}
             onMount={handleEditorMount}
+            options={{ 
+              glyphMargin: true,
+              hover: {
+                enabled: true
+              }
+            }}
           />
         </div>
 
@@ -331,17 +560,17 @@ export default function RoomEditorPage() {
                 Waiting for room data…
               </li>
             ) : (
-              roomUsers.map((id) => {
-                const isSelf = mySocketId !== null && id === mySocketId;
+              roomUsers.map((user) => {
+                const isSelf = mySocketId !== null && user.id === mySocketId;
                 return (
                   <li
-                    key={id}
+                    key={user.id}
                     className={`room-user-item${isSelf ? " room-user-item--self" : ""}`}
                   >
                     {isSelf ? (
                       <span className="room-user-item__you">You</span>
                     ) : null}
-                    {id}
+                    {user.username}
                   </li>
                 );
               })
