@@ -419,6 +419,14 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
         glyphMargin: true
       });
 
+      // Disable default browser context menu inside Monaco editor
+      const editorDomNode = ed.getDomNode();
+      if (editorDomNode) {
+        editorDomNode.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+        });
+      }
+
       cursorListenerDisposableRef.current?.dispose();
       cursorListenerDisposableRef.current = ed.onDidChangeCursorPosition(
         () => {
@@ -444,24 +452,22 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
 
       commentClickDisposableRef.current?.dispose();
       commentClickDisposableRef.current = ed.onMouseDown((event) => {
+        // Only handle right-click events
+        if (!event.event.rightButton) return;
+        
         const clickedLine = event.target.position?.lineNumber;
         if (!clickedLine) return;
         
-        // Check if this line has comments
-        const lineComments = comments.filter(c => c.lineNumber === clickedLine);
-        
-        if (lineComments.length > 0) {
-          setSelectedLine(clickedLine);
-          console.log(`Line ${clickedLine} has ${lineComments.length} comment(s):`, lineComments);
-          return;
-        }
-        
-        // If no comments on this line, add a new comment
+        // Open comment dialog on right-click
         const text = window.prompt(`Add comment on line ${clickedLine}`);
         const trimmed = text?.trim();
         if (!trimmed) return;
 
         // Check for duplicate comment (same text, same line, same user)
+        const sock = socketRef.current;
+        const uid = sock?.id;
+        if (!uid) return;
+        
         const isDuplicate = comments.some(c => 
           c.lineNumber === clickedLine && 
           c.text === trimmed && 
@@ -473,10 +479,8 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
           return;
         }
 
-        const sock = socketRef.current;
         const rid = roomIdRef.current;
-        const uid = sock?.id;
-        if (!sock?.connected || !rid || !uid) return;
+        if (!sock?.connected || !rid) return;
 
         // CHALLENGE 19: Comment creation was causing duplicates due to local state updates
         // SOLUTION: Removed setComments call, rely only on socket event for state updates
