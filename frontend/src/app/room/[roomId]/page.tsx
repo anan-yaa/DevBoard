@@ -66,6 +66,7 @@ export default function RoomEditorPage() {
   const pendingCursorRef = useRef<CursorPos | null>(null);
 
   const applyPeerDecorationsRef = useRef<() => void>(() => {});
+  const applyIncomingCodeRef = useRef<(code: string) => void>(() => {});
 
   const applyPeerDecorations = useCallback(() => {
     const editor = editorRef.current;
@@ -123,6 +124,19 @@ export default function RoomEditorPage() {
     applyPeerDecorationsRef.current = applyPeerDecorations;
   }, [applyPeerDecorations]);
 
+  const applyIncomingCode = useCallback((code: string) => {
+    skipEmitForValueRef.current = code;
+    setContent(code);
+    const ed = editorRef.current;
+    if (ed && ed.getValue() !== code) {
+      ed.setValue(code);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    applyIncomingCodeRef.current = applyIncomingCode;
+  }, [applyIncomingCode]);
+
   useEffect(() => {
     roomIdRef.current = roomId;
   }, [roomId]);
@@ -141,10 +155,14 @@ export default function RoomEditorPage() {
     const socket = io(SOCKET_URL);
     socketRef.current = socket;
 
-    const onReceiveMessage = (data: { message?: unknown }) => {
-      if (typeof data?.message !== "string") return;
-      skipEmitForValueRef.current = data.message;
-      setContent(data.message);
+    const onLoadCode = (code: unknown) => {
+      if (typeof code !== "string") return;
+      applyIncomingCodeRef.current(code);
+    };
+
+    const onCodeChange = (data: { code?: unknown }) => {
+      if (typeof data?.code !== "string") return;
+      applyIncomingCodeRef.current(data.code);
     };
 
     const onRoomUsers = (data: { socketIds?: unknown }) => {
@@ -197,7 +215,8 @@ export default function RoomEditorPage() {
       applyPeerDecorationsRef.current();
     };
 
-    socket.on("receive-message", onReceiveMessage);
+    socket.on("load-code", onLoadCode);
+    socket.on("code-change", onCodeChange);
     socket.on("room-users", onRoomUsers);
     socket.on("cursor-update", onCursorUpdate);
 
@@ -214,7 +233,8 @@ export default function RoomEditorPage() {
         cancelAnimationFrame(cursorRafRef.current);
         cursorRafRef.current = null;
       }
-      socket.off("receive-message", onReceiveMessage);
+      socket.off("load-code", onLoadCode);
+      socket.off("code-change", onCodeChange);
       socket.off("room-users", onRoomUsers);
       socket.off("cursor-update", onCursorUpdate);
       socket.off("connect", onConnect);
@@ -257,7 +277,7 @@ export default function RoomEditorPage() {
       const sock = socketRef.current;
       const id = roomIdRef.current;
       if (!sock?.connected || !id) return;
-      sock.emit("send-message", { roomId: id, message: next });
+      sock.emit("code-change", { roomId: id, code: next });
     }, EMIT_DEBOUNCE_MS);
   }, []);
 

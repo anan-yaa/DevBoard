@@ -21,6 +21,8 @@ const io = new Server(httpServer, {
 
 /** In-memory: each roomId -> socket ids currently joined (mirrors join-room / disconnect). */
 const roomSocketIds = new Map<string, Set<string>>();
+/** In-memory: latest code snapshot per room (lost on server restart). */
+const roomLatestCode = new Map<string, string>();
 
 function addSocketToRoom(roomId: string, socketId: string) {
   let set = roomSocketIds.get(roomId);
@@ -62,17 +64,19 @@ io.on("connection", (socket) => {
     addSocketToRoom(roomId, socket.id);
     console.log(`User ${socket.id} joined room "${roomId}"`);
     emitRoomUsers(roomId);
+    socket.emit("load-code", roomLatestCode.get(roomId) ?? "");
   });
 
-  socket.on("send-message", (payload: unknown) => {
+  socket.on("code-change", (payload: unknown) => {
     if (!payload || typeof payload !== "object") {
       return;
     }
-    const { roomId, message } = payload as Record<string, unknown>;
-    if (typeof roomId !== "string" || !roomId || typeof message !== "string") {
+    const { roomId, code } = payload as Record<string, unknown>;
+    if (typeof roomId !== "string" || !roomId || typeof code !== "string") {
       return;
     }
-    socket.to(roomId).emit("receive-message", { message });
+    roomLatestCode.set(roomId, code);
+    socket.to(roomId).emit("code-change", { code });
   });
 
   socket.on("cursor-move", (payload: unknown) => {
