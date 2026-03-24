@@ -18,6 +18,7 @@ model Room {
 model Comment {
   id         String   @id @default(uuid())
   roomId     String
+  userId     String
   lineNumber Int
   text       String
   username   String

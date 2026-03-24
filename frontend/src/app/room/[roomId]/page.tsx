@@ -187,7 +187,7 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
     setPresenceLog([]);
     setMySocketId(null);
     setRemoteCursors({});
-    setComments([]);
+    // Remove setComments([]) to allow database comments to load
     prevRoomUsersRef.current = [];
     decorationIdsRef.current = [];
     commentDecorationIdsRef.current = [];
@@ -281,7 +281,7 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
     // CHALLENGE 16: Comments were appearing multiple times (duplicates)
   // SOLUTION: Removed direct local state updates, only update via socket events
   const onNewComment = (comment: unknown) => {
-    console.log("🔥 RECEIVED new-comment event:", comment);
+    console.log("🔥 RECEIVED receive-comment event:", comment);
     if (!comment || typeof comment !== "object") return;
     const rec = comment as Record<string, unknown>;
     if (
@@ -326,10 +326,10 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
     socket.on("code-change", onCodeChange);
     socket.on("room-users", onRoomUsers);
     socket.on("cursor-update", onCursorUpdate);
-    socket.on("new-comment", onNewComment);
+    socket.on("receive-comment", onNewComment);
     
     console.log("🔌 Socket listeners set up. Connected:", socket.connected);
-    console.log("🏠 Listening for new-comment events...");
+    console.log("🏠 Listening for receive-comment events...");
 
     // CHALLENGE 18: Join-room payload needed to include username for unified identity
     // SOLUTION: Updated emit to include username from useRef
@@ -351,7 +351,7 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
       socket.off("code-change", onCodeChange);
       socket.off("room-users", onRoomUsers);
       socket.off("cursor-update", onCursorUpdate);
-      socket.off("new-comment", onNewComment);
+      socket.off("receive-comment", onNewComment);
       socket.off("connect", onConnect);
       socket.close();
       socketRef.current = null;
@@ -402,6 +402,7 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
       const sock = socketRef.current;
       const id = roomIdRef.current;
       if (!sock?.connected || !id) return;
+      
       sock.emit("code-change", { roomId: id, code: next });
     }, EMIT_DEBOUNCE_MS);
   }, []);
@@ -493,18 +494,20 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
         };
         console.log("Emitting add-comment:", {
           roomId: rid,
-          lineNumber: clickedLine,
-          text: trimmed,
-          userId: uid,
-          username: username.current,
+          comment: {
+            lineNumber: clickedLine,
+            text: trimmed,
+            username: username.current,
+          },
         });
         // Remove direct setComments - only update via socket event
         sock.emit("add-comment", {
           roomId: rid,
-          lineNumber: clickedLine,
-          text: trimmed,
-          userId: uid,
-          username: username.current,
+          comment: {
+            lineNumber: clickedLine,
+            text: trimmed,
+            username: username.current,
+          },
         });
       });
     },

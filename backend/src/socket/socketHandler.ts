@@ -52,9 +52,15 @@ export function setupSocketHandlers(io: Server, roomController: RoomController, 
         // Call existing business logic (preserves all existing functionality)
         await roomController.joinRoom(socket, io, payload);
         
-        // Load comments from controller (using existing in-memory store for now)
-        const comments = commentController.getRoomComments(roomId);
+        // Fetch comments from DB
+        const comments = await prisma.comment.findMany({
+          where: { roomId },
+          orderBy: { createdAt: 'asc' },
+        });
+        
+        // Send to this user
         socket.emit('load-comments', comments);
+        console.log('💬 Loaded', comments.length, 'comments from database for room:', roomId);
         
         console.log('✅ Room join completed for:', socket.id);
       } catch (error) {
@@ -86,6 +92,7 @@ export function setupSocketHandlers(io: Server, roomController: RoomController, 
             code,
           },
         });
+        
         console.log('💾 Code saved to database for room:', roomId);
       } catch (error) {
         console.log('❌ Error saving code to database:', error);
@@ -100,9 +107,54 @@ export function setupSocketHandlers(io: Server, roomController: RoomController, 
       roomController.handleCursorMove(socket, payload);
     });
 
-    socket.on('add-comment', (payload: unknown) => {
+    socket.on('add-comment', async (payload: unknown) => {
       console.log('💬 Received add-comment event:', payload);
-      commentController.addComment(socket, io, payload);
+      
+      if (!payload || typeof payload !== 'object') {
+        console.log('❌ Invalid payload for add-comment');
+        return;
+      }
+      
+      const { roomId, comment } = payload as Record<string, unknown>;
+      if (
+        typeof roomId !== 'string' || !roomId ||
+        !comment || typeof comment !== 'object'
+      ) {
+        console.log('❌ Invalid payload structure for add-comment');
+        return;
+      }
+      
+      const commentData = comment as Record<string, unknown>;
+      if (
+        typeof commentData.lineNumber !== 'number' ||
+        typeof commentData.text !== 'string' ||
+        typeof commentData.username !== 'string'
+      ) {
+        console.log('❌ Invalid comment data structure');
+        return;
+      }
+      
+      try {
+        // Save to DB
+        const saved = await prisma.comment.create({
+          data: {
+            roomId,
+            lineNumber: commentData.lineNumber,
+            text: commentData.text.trim(),
+            username: commentData.username,
+            userId: socket.id, // Add userId for database consistency
+          },
+        });
+        
+        console.log('💾 Comment saved to database:', saved.id);
+        
+        // Broadcast saved comment
+        io.to(roomId).emit('receive-comment', saved);
+        
+        console.log('📡 Comment broadcast sent to room:', roomId);
+      } catch (error) {
+        console.log('❌ Error saving comment to database:', error);
+      }
     });
     
     console.log('✅ Socket handlers set up for:', socket.id);
