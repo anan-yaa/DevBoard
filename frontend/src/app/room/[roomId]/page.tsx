@@ -554,47 +554,60 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
               glyphMargin: true,
               hover: {
                 enabled: true
-              }
+              },
+              fontSize: 14,
+              lineHeight: 20,
+              fontFamily: 'ui-monospace, "SF Mono", Monaco, "Cascadia Code", monospace',
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              roundedSelection: false,
+              padding: { top: 16, bottom: 16 },
+              lineNumbers: 'on',
+              renderLineHighlight: 'line',
+              cursorBlinking: 'blink',
+              cursorSmoothCaretAnimation: 'on',
+              smoothScrolling: true,
+              bracketPairColorization: { enabled: true }
             }}
           />
         </div>
 
         <aside className="room-sidebar">
-          <h2 className="room-sidebar__title">Users</h2>
-          <ul className="room-user-list">
-            {roomUsers.length === 0 ? (
-              <li className="room-user-item room-user-item--placeholder">
-                Waiting for room data…
-              </li>
-            ) : (
-              roomUsers.map((user) => {
-                const isSelf = mySocketId !== null && user.id === mySocketId;
-                return (
-                  <li
-                    key={user.id}
-                    className={`room-user-item${isSelf ? " room-user-item--self" : ""}`}
-                  >
-                    {isSelf ? (
-                      <span className="room-user-item__you">You</span>
-                    ) : null}
-                    {user.username}
-                  </li>
-                );
-              })
-            )}
-          </ul>
+          <div className="room-sidebar__content">
+            <h2 className="room-sidebar__title">Active Users</h2>
+            <ul className="room-user-list">
+              {roomUsers.length === 0 ? (
+                <li className="room-user-item room-user-item--placeholder">
+                  Waiting for users to join…
+                </li>
+              ) : (
+                roomUsers.map((user) => {
+                  const isSelf = mySocketId !== null && user.id === mySocketId;
+                  return (
+                    <li
+                      key={user.id}
+                      className={`room-user-item${isSelf ? " room-user-item--self" : ""}`}
+                    >
+                      {isSelf && <span className="room-user-item__you">You</span>}
+                      <span>{user.username}</span>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
 
-          <hr className="room-sidebar__divider" />
-          <h3 className="room-activity__title">Activity</h3>
-          <ul className="room-activity__list">
-            {presenceLog.length === 0 ? (
-              <li>Join events will appear here.</li>
-            ) : (
-              presenceLog.map((line, i) => (
-                <li key={`${i}-${line}`}>{line}</li>
-              ))
-            )}
-          </ul>
+            <hr className="room-sidebar__divider" />
+            <h3 className="room-activity__title">Activity</h3>
+            <ul className="room-activity__list">
+              {presenceLog.length === 0 ? (
+                <li>Join events will appear here.</li>
+              ) : (
+                presenceLog.map((line, i) => (
+                  <li key={`${i}-${line}`}>{line}</li>
+                ))
+              )}
+            </ul>
+          </div>
         </aside>
       </div>
     </div>

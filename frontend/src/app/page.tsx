@@ -14,7 +14,7 @@ function randomRoomId(): string {
 
 export default function HomePage() {
   const router = useRouter();
-  /** Value of the “join existing room” text field — updated by typing or Paste. */
+  /** Value of the "join existing room" text field — updated by typing or Paste. */
   const [roomId, setRoomId] = useState("");
 
   /** Reads the system clipboard and drops the result into the input (needs permission / secure context). */
@@ -40,54 +40,66 @@ export default function HomePage() {
   }, [roomId, router]);
 
   return (
-    <div
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: 24,
-        maxWidth: 560,
-      }}
-    >
-      <p style={{ margin: "0 0 12px", color: "#444", fontSize: 14 }}>
-        Join with a room id someone shared, or create a new room.
-      </p>
+    <div className="landing-page">
+      <div className="landing-card">
+        {/* Header */}
+        <div className="landing-header">
+          <h1 className="landing-title">DevBoard</h1>
+          <p className="landing-subtitle">Real-time collaborative code editor</p>
+        </div>
 
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "row",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 16,
-        }}
-      >
-        <input
-          type="text"
-          value={roomId}
-          onChange={(e) => setRoomId(e.target.value)}
-          placeholder="Paste Room ID"
-          aria-label="Room ID"
-          style={{
-            flex: "1 1 160px",
-            minWidth: 120,
-            padding: "8px 10px",
-            fontSize: 14,
-          }}
-        />
-        <button type="button" onClick={() => void handlePasteFromClipboard()}>
-          Paste
-        </button>
-        <button type="button" onClick={handleJoinRoom}>
-          Join Room
-        </button>
+        {/* Join Room Section */}
+        <div className="landing-section">
+          <div className="input-group">
+            <input
+              type="text"
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              placeholder="Enter room ID"
+              aria-label="Room ID"
+              className="landing-input"
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') handleJoinRoom();
+              }}
+            />
+            <button 
+              type="button" 
+              onClick={() => void handlePasteFromClipboard()}
+              className="landing-button landing-button--secondary"
+            >
+              📋 Paste
+            </button>
+          </div>
+          <button 
+            type="button" 
+            onClick={handleJoinRoom}
+            className="landing-button landing-button--primary landing-button--full-width"
+          >
+            Join Room
+          </button>
+        </div>
+
+        {/* Divider */}
+        <div className="landing-divider">
+          <span>OR</span>
+        </div>
+
+        {/* Create Room Section */}
+        <div className="landing-section">
+          <button
+            type="button"
+            onClick={() => router.push(`/room/${randomRoomId()}`)}
+            className="landing-button landing-button--primary landing-button--full-width"
+          >
+            ✨ Create New Room
+          </button>
+        </div>
+
+        {/* Footer */}
+        <div className="landing-footer">
+          <p>Share a room link to collaborate instantly</p>
+        </div>
       </div>
-
-      <button
-        type="button"
-        onClick={() => router.push(`/room/${randomRoomId()}`)}
-      >
-        Create Room
-      </button>
     </div>
   );
 }
