@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
@@ -11,6 +12,11 @@ model Room {
   id        String   @id @default(uuid())
   code      String   @default("")
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Indexes for performance
+  @@index([createdAt])
+  @@index([id])
   
   comments  Comment[]
 }
@@ -23,6 +29,13 @@ model Comment {
   text       String
   username   String
   createdAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Indexes for performance
+  @@index([roomId])
+  @@index([roomId, lineNumber])
+  @@index([createdAt(sort: Desc)])
+  @@index([userId])
   
   room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 }

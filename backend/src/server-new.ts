@@ -72,12 +72,6 @@ const io = new Server(httpServer, {
   maxHttpBufferSize: 1e8, // 100 MB
 });
 
-// Add compression for production
-if (process.env.NODE_ENV === 'production') {
-  const compression = require('compression');
-  app.use(compression());
-}
-
 // Initialize shared room store
 const roomStore = new RoomStore();
 console.log('🏪 RoomStore initialized');

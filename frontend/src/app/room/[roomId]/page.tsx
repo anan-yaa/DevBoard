@@ -9,7 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { io, type Socket } from "socket.io-client";
+import { socketService } from "@/lib/socket";
+import type { Socket } from "socket.io-client";
 
 import type { editor } from "monaco-editor";
 import type { Monaco } from "@monaco-editor/react";
@@ -18,7 +19,7 @@ const Editor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
 });
 
-const SOCKET_URL = "http://localhost:5000";
+const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:5000";
 const DEFAULT_VALUE = "// Start coding...";
 const EMIT_DEBOUNCE_MS = 150;
 
@@ -192,9 +193,7 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
     decorationIdsRef.current = [];
     commentDecorationIdsRef.current = [];
 
-    const socket = io(SOCKET_URL);
-    socketRef.current = socket;
-
+    // Event listener functions
     const onLoadCode = (code: unknown) => {
       if (typeof code !== "string") return;
       applyIncomingCodeRef.current(code);
@@ -278,67 +277,68 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
       }));
     };
 
-    // CHALLENGE 16: Comments were appearing multiple times (duplicates)
-  // SOLUTION: Removed direct local state updates, only update via socket events
-  const onNewComment = (comment: unknown) => {
-    console.log("🔥 RECEIVED receive-comment event:", comment);
-    if (!comment || typeof comment !== "object") return;
-    const rec = comment as Record<string, unknown>;
-    if (
-      typeof rec.id !== "string" ||
-      typeof rec.userId !== "string" ||
-      typeof rec.text !== "string" ||
-      typeof rec.lineNumber !== "number" ||
-      typeof rec.username !== "string"
-    ) {
-      console.log("❌ Invalid comment format:", rec);
-      return;
-    }
-    const parsed: ReviewComment = {
-      id: rec.id,
-      userId: rec.userId,
-      text: rec.text,
-      lineNumber: rec.lineNumber,
-      username: rec.username,
-    };
-    
-    console.log("📝 Processing comment:", parsed);
-    setComments((prev) => {
-      console.log("Current comments:", prev.length);
-      console.log("Checking for duplicate ID:", parsed.id);
-      
-      // CHALLENGE 17: Duplicate prevention was failing due to weak ID checking
-      // SOLUTION: Strict ID-based duplicate prevention with detailed logging
-      if (prev.some((c) => c.id === parsed.id)) {
-        console.log("🚫 Duplicate comment prevented:", parsed.id);
-        return prev;
+    const onNewComment = (comment: unknown) => {
+      console.log("🔥 RECEIVED receive-comment event:", comment);
+      if (!comment || typeof comment !== "object") return;
+      const rec = comment as Record<string, unknown>;
+      if (
+        typeof rec.id !== "string" ||
+        typeof rec.userId !== "string" ||
+        typeof rec.text !== "string" ||
+        typeof rec.lineNumber !== "number" ||
+        typeof rec.username !== "string"
+      ) {
+        console.log("❌ Invalid comment format:", rec);
+        return;
       }
+      const parsed: ReviewComment = {
+        id: rec.id,
+        userId: rec.userId,
+        text: rec.text,
+        lineNumber: rec.lineNumber,
+        username: rec.username,
+      };
       
-      console.log("✅ Adding new comment:", parsed);
-      const newComments = [...prev, parsed];
-      console.log("📊 Total comments after adding:", newComments.length);
-      return newComments;
-    });
-  };
-
-    socket.on("load-code", onLoadCode);
-    socket.on("load-comments", onLoadComments);
-    socket.on("code-change", onCodeChange);
-    socket.on("room-users", onRoomUsers);
-    socket.on("cursor-update", onCursorUpdate);
-    socket.on("receive-comment", onNewComment);
-    
-    console.log("🔌 Socket listeners set up. Connected:", socket.connected);
-    console.log("🏠 Listening for receive-comment events...");
-
-    // CHALLENGE 18: Join-room payload needed to include username for unified identity
-    // SOLUTION: Updated emit to include username from useRef
-    const onConnect = () => {
-      setMySocketId(socket.id ?? null);
-      socket.emit("join-room", { roomId, username: username.current });
+      console.log("📝 Processing comment:", parsed);
+      setComments((prev) => {
+        console.log("Current comments:", prev.length);
+        console.log("Checking for duplicate ID:", parsed.id);
+        
+        if (prev.some((c) => c.id === parsed.id)) {
+          console.log("🚫 Duplicate comment prevented:", parsed.id);
+          return prev;
+        }
+        
+        console.log("✅ Adding new comment:", parsed);
+        const newComments = [...prev, parsed];
+        console.log("📊 Total comments after adding:", newComments.length);
+        return newComments;
+      });
     };
-    if (socket.connected) onConnect();
-    else socket.on("connect", onConnect);
+
+    // Connect using the socket service with reconnection handling
+    socketService.connect({ 
+      url: SOCKET_URL, 
+      roomId: roomId || undefined,
+      username: username.current 
+    }).then((socket) => {
+      socketRef.current = socket;
+      setMySocketId(socket.id ?? null);
+      
+      // Set up event listeners after successful connection
+      socket.on("load-code", onLoadCode);
+      socket.on("load-comments", onLoadComments);
+      socket.on("code-change", onCodeChange);
+      socket.on("room-users", onRoomUsers);
+      socket.on("cursor-update", onCursorUpdate);
+      socket.on("receive-comment", onNewComment);
+      
+      console.log("🔌 Socket listeners set up. Connected:", socket.connected);
+      console.log("🏠 Listening for receive-comment events...");
+    }).catch((error) => {
+      console.error('❌ Failed to connect to socket:', error);
+      // Handle connection error (show user message, retry, etc.)
+    });
 
     return () => {
       if (emitTimerRef.current) clearTimeout(emitTimerRef.current);
@@ -346,14 +346,18 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
         cancelAnimationFrame(cursorRafRef.current);
         cursorRafRef.current = null;
       }
-      socket.off("load-code", onLoadCode);
-      socket.off("load-comments", onLoadComments);
-      socket.off("code-change", onCodeChange);
-      socket.off("room-users", onRoomUsers);
-      socket.off("cursor-update", onCursorUpdate);
-      socket.off("receive-comment", onNewComment);
-      socket.off("connect", onConnect);
-      socket.close();
+      
+      const socket = socketRef.current;
+      if (socket) {
+        socket.off("load-code", onLoadCode);
+        socket.off("load-comments", onLoadComments);
+        socket.off("code-change", onCodeChange);
+        socket.off("room-users", onRoomUsers);
+        socket.off("cursor-update", onCursorUpdate);
+        socket.off("receive-comment", onNewComment);
+      }
+      
+      socketService.disconnect();
       socketRef.current = null;
       decorationIdsRef.current = editorRef.current?.deltaDecorations(
         decorationIdsRef.current,
