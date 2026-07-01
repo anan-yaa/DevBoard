@@ -81,15 +81,36 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
   const commentClickDisposableRef = useRef<{ dispose: () => void } | null>(null);
   const cursorRafRef = useRef<number | null>(null);
   const pendingCursorRef = useRef<CursorPos | null>(null);
+  const cursorWidgetsRef = useRef<Map<string, { widget: editor.IContentWidget; domNode: HTMLDivElement }>>(new Map());
   const applyIncomingCodeRef = useRef<(code: string) => void>(() => {});
 
   const applyIncomingCode = useCallback((code: string) => {
     skipEmitForValueRef.current = code;
     setContent(code);
     const ed = editorRef.current;
-    if (ed && ed.getValue() !== code) {
+    if (!ed || ed.getValue() === code) return;
+
+    const position = ed.getPosition();
+    const selection = ed.getSelection();
+    const scrollTop = ed.getScrollTop();
+    const scrollLeft = ed.getScrollLeft();
+
+    const model = ed.getModel();
+    if (model) {
+      ed.executeEdits("remote-update", [
+        {
+          range: model.getFullModelRange(),
+          text: code,
+        },
+      ]);
+    } else {
       ed.setValue(code);
     }
+
+    if (position) ed.setPosition(position);
+    if (selection) ed.setSelection(selection);
+    ed.setScrollTop(scrollTop);
+    ed.setScrollLeft(scrollLeft);
   }, []);
 
   useLayoutEffect(() => {
@@ -106,24 +127,72 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
 
     const lineCount = model.getLineCount();
     const nextDecorations: editor.IModelDeltaDecoration[] = [];
+    const activeWidgetIds = new Set<string>();
+    const colors = ["#6366f1", "#ec4899", "#22c55e", "#fb923c", "#9333ea", "#0ea5e9"];
+
     for (const [userId, pos] of Object.entries(remoteCursors)) {
       if (mySocketId && userId === mySocketId) continue;
+      activeWidgetIds.add(userId);
+
+      const userIndex = roomUsers.findIndex((u) => u.id === userId);
+      const colorIdx = userIndex >= 0 ? userIndex % 6 : 0;
+      const username = roomUsers.find((u) => u.id === userId)?.username || `User`;
+      const userColor = colors[colorIdx];
+
       const line = Math.min(Math.max(1, pos.lineNumber), lineCount);
       const maxCol = model.getLineMaxColumn(line);
       const col = Math.min(Math.max(1, pos.column), Math.max(1, maxCol - 1));
+
       nextDecorations.push({
         range: new monaco.Range(line, col, line, col + 1),
         options: {
-          className: "remote-cursor",
+          className: `remote-cursor remote-cursor-${colorIdx}`,
+          hoverMessage: {
+            value: `👤 **${username}**`,
+          },
         },
       });
+
+      let entry = cursorWidgetsRef.current.get(userId);
+      if (!entry) {
+        const domNode = document.createElement("div");
+        domNode.className = "remote-cursor-badge";
+        const widgetId = `remote-cursor-widget-${userId}`;
+        const widget: editor.IContentWidget = {
+          getId: () => widgetId,
+          getDomNode: () => domNode,
+          getPosition: () => ({
+            position: { lineNumber: line, column: col },
+            preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
+          }),
+        };
+        ed.addContentWidget(widget);
+        entry = { widget, domNode };
+        cursorWidgetsRef.current.set(userId, entry);
+      } else {
+        entry.widget.getPosition = () => ({
+          position: { lineNumber: line, column: col },
+          preference: [monaco.editor.ContentWidgetPositionPreference.ABOVE],
+        });
+      }
+      entry.domNode.style.backgroundColor = userColor;
+      entry.domNode.textContent = username;
+      ed.layoutContentWidget(entry.widget);
+    }
+
+    // Remove widgets for disconnected users
+    for (const [userId, entry] of cursorWidgetsRef.current.entries()) {
+      if (!activeWidgetIds.has(userId)) {
+        ed.removeContentWidget(entry.widget);
+        cursorWidgetsRef.current.delete(userId);
+      }
     }
 
     decorationIdsRef.current = ed.deltaDecorations(
       decorationIdsRef.current,
       nextDecorations,
     );
-  }, [remoteCursors, mySocketId]);
+  }, [remoteCursors, mySocketId, roomUsers]);
 
   // CHALLENGE 12: Monaco hover was not working for inline comments
   // SOLUTION: Fixed decoration range and enabled hover in editor options
@@ -219,14 +288,15 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
       setComments(parsed);
     };
 
-    const onRoomUsers = (data: { users?: unknown }) => {
-      const raw = data?.users;
+    const onRoomUsers = (data: any) => {
+      const raw = Array.isArray(data) ? data : data?.users;
       if (
         !Array.isArray(raw) ||
         !raw.every((user): user is {id: string, username: string} => 
+          user !== null &&
           typeof user === "object" && 
-          typeof user.id === "string" && 
-          typeof user.username === "string"
+          typeof (user as Record<string, unknown>).id === "string" && 
+          typeof (user as Record<string, unknown>).username === "string"
         )
       ) {
         return;
@@ -334,7 +404,12 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
       socket.on("receive-comment", onNewComment);
       
       console.log("🔌 Socket listeners set up. Connected:", socket.connected);
-      console.log("🏠 Listening for receive-comment events...");
+      if (roomId && username.current) {
+        socket.emit("join-room", {
+          roomId,
+          username: username.current,
+        });
+      }
     }).catch((error) => {
       console.error('❌ Failed to connect to socket:', error);
       // Handle connection error (show user message, retry, etc.)
@@ -359,6 +434,10 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
       
       socketService.disconnect();
       socketRef.current = null;
+      for (const entry of cursorWidgetsRef.current.values()) {
+        editorRef.current?.removeContentWidget(entry.widget);
+      }
+      cursorWidgetsRef.current.clear();
       decorationIdsRef.current = editorRef.current?.deltaDecorations(
         decorationIdsRef.current,
         [],
@@ -585,13 +664,26 @@ const username = useRef(`User-${Math.floor(Math.random() * 1000)}`);
                   Waiting for users to join…
                 </li>
               ) : (
-                roomUsers.map((user) => {
+                roomUsers.map((user, idx) => {
                   const isSelf = mySocketId !== null && user.id === mySocketId;
+                  const colors = ["#6366f1", "#ec4899", "#22c55e", "#fb923c", "#9333ea", "#0ea5e9"];
+                  const userColor = colors[idx % 6];
                   return (
                     <li
                       key={user.id}
                       className={`room-user-item${isSelf ? " room-user-item--self" : ""}`}
+                      style={{ borderLeftColor: userColor, borderLeftWidth: "3px" }}
                     >
+                      <span
+                        style={{
+                          backgroundColor: userColor,
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          display: "inline-block",
+                          flexShrink: 0,
+                        }}
+                      />
                       {isSelf && <span className="room-user-item__you">You</span>}
                       <span>{user.username}</span>
                     </li>

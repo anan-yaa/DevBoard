@@ -89,6 +89,7 @@ export class RoomController {
 
   emitRoomUsers(io: any, roomId: string): void {
     const users = this.roomStore.getRoomUsers(roomId);
+    console.log("EMITTING USERS to room", roomId, ":", users);
     io.to(roomId).emit('room-users', { users });
   }
 

@@ -65,6 +65,26 @@
   border-left: 2px solid #0ea5e9;
 }
 
+.remote-cursor.remote-cursor-0 { border-left: 2px solid #6366f1 !important; }
+.remote-cursor.remote-cursor-1 { border-left: 2px solid #ec4899 !important; }
+.remote-cursor.remote-cursor-2 { border-left: 2px solid #22c55e !important; }
+.remote-cursor.remote-cursor-3 { border-left: 2px solid #fb923c !important; }
+.remote-cursor.remote-cursor-4 { border-left: 2px solid #9333ea !important; }
+.remote-cursor.remote-cursor-5 { border-left: 2px solid #0ea5e9 !important; }
+
+.remote-cursor-badge {
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  z-index: 10;
+}
+
 /* Modern dark theme variables */
 .room-page {
   --bg-primary: #0d1117;

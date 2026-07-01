@@ -4,6 +4,12 @@ import dotenv from 'dotenv';
 // Load environment variables
 dotenv.config();
 
+// Set sensible defaults for development environment
+process.env.NODE_ENV = process.env.NODE_ENV || 'development';
+if (process.env.NODE_ENV !== 'production') {
+  process.env.CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
+}
+
 // Required environment variables
 const requiredEnvVars = [
   'DATABASE_URL',
@@ -25,14 +31,14 @@ if (missingEnvVars.length > 0) {
 // Environment configuration
 export const config = {
   // Server
-  NODE_ENV: process.env.NODE_ENV!,
+  NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: parseInt(process.env.PORT || '5000', 10),
   
   // Database
   DATABASE_URL: process.env.DATABASE_URL!,
     
   // CORS
-  CORS_ORIGIN: process.env.CORS_ORIGIN!.split(',').map(origin => origin.trim()),
+  CORS_ORIGIN: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map(origin => origin.trim()),
   
   // WebSocket
 WS_URL: process.env.WS_URL || 'localhost:5000',
