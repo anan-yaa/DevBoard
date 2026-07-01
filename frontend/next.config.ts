@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   // Production optimizations
   compress: true,
   poweredByHeader: false,
-  swcMinify: true,
+  serverExternalPackages: ['@prisma/client'],
   
   // Environment-specific configuration
   ...(process.env.NODE_ENV === 'production' && {
@@ -29,11 +29,14 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizeCss: true,
     optimizePackageImports: ['@monaco-editor/react'],
-    serverComponentsExternalPackages: ['@prisma/client'],
-    // Enable Turbopack for faster builds (Next.js 15)
-    turbo: {
-      rules: {
-        '*.svg': ['@svgr/webpack'],
+  },
+  
+  // Turbopack configuration for Next.js 15
+  turbopack: {
+    rules: {
+      '*.svg': {
+        loaders: ['@svgr/webpack'],
+        as: '*.js',
       },
     },
   },
@@ -42,7 +45,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: '/:path*',
         headers: [
           {
             key: 'X-Frame-Options',
@@ -71,7 +74,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/api/(.*)',
+        source: '/api/:path*',
         headers: [
           {
             key: 'Cache-Control',
@@ -80,16 +83,7 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/_next/static/(.*)',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
-      {
-        source: '/(.*\\.(js|css|png|jpg|jpeg|gif|ico|svg|webp|avif))',
+        source: '/_next/static/:path*',
         headers: [
           {
             key: 'Cache-Control',
@@ -118,8 +112,8 @@ const nextConfig: NextConfig = {
     if (apiURL && process.env.NODE_ENV === 'development') {
       return [
         {
-          source: '/api/(.*)',
-          destination: `${apiURL}/api/$1`,
+          source: '/api/:path*',
+          destination: `${apiURL}/api/:path*`,
         },
       ];
     }
