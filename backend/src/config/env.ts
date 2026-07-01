@@ -35,7 +35,7 @@ export const config = {
   CORS_ORIGIN: process.env.CORS_ORIGIN!.split(',').map(origin => origin.trim()),
   
   // WebSocket
-WS_URL: process.env.WS_URL || 'localhost:5000'  
+WS_URL: process.env.WS_URL || 'localhost:5000',
   // Development defaults
   isDevelopment: process.env.NODE_ENV === 'development',
   isProduction: process.env.NODE_ENV === 'production',
