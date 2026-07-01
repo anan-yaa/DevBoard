@@ -7,9 +7,7 @@ dotenv.config();
 // Required environment variables
 const requiredEnvVars = [
   'DATABASE_URL',
-  'JWT_SECRET',
   'CORS_ORIGIN',
-  'NODE_ENV'
 ] as const;
 
 // Validate required environment variables
@@ -32,16 +30,12 @@ export const config = {
   
   // Database
   DATABASE_URL: process.env.DATABASE_URL!,
-  
-  // Security
-  JWT_SECRET: process.env.JWT_SECRET!,
-  
+    
   // CORS
   CORS_ORIGIN: process.env.CORS_ORIGIN!.split(',').map(origin => origin.trim()),
   
   // WebSocket
-  WS_URL: process.env.WS_URL || process.env.DATABASE_URL?.split('@')[1]?.split('/')[0] || 'localhost:5000',
-  
+WS_URL: process.env.WS_URL || 'localhost:5000'  
   // Development defaults
   isDevelopment: process.env.NODE_ENV === 'development',
   isProduction: process.env.NODE_ENV === 'production',

@@ -159,9 +159,6 @@ const nextConfig: NextConfig = {
     return config;
   },
   
-  // Build configuration
-  buildModules: ['@next/bundle-analyzer'],
-  
   // Output configuration
   output: 'standalone',
   

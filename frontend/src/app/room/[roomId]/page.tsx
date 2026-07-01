@@ -19,7 +19,7 @@ const Editor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
 });
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:5000";
+const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const DEFAULT_VALUE = "// Start coding...";
 const EMIT_DEBOUNCE_MS = 150;
 
