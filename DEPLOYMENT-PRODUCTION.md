@@ -33,7 +33,6 @@ This guide covers deploying the production-ready DevBoard collaborative code edi
 - ✅ Express rate limiting (100 req/15min production)
 - ✅ CORS with production origins
 - ✅ Input validation and sanitization
-- ✅ JWT secret management
 - ✅ Environment variable validation
 - ✅ Database connection security
 - ✅ WebSocket security (WSS only in production)
@@ -71,7 +70,6 @@ Set these in your Render service environment:
 DATABASE_URL=postgresql://user:password@host:port/database
 NODE_ENV=production
 PORT=5000
-JWT_SECRET=your-32-character-secret
 CORS_ORIGIN=https://yourdomain.vercel.app,https://www.yourdomain.com
 
 # Optional
@@ -208,7 +206,6 @@ import { logInfo, logError, logSecurityEvent } from './utils/logger';
 ## 🛡️ Security Checklist
 
 ### Pre-Deployment Security
-- [ ] JWT secrets are strong (32+ chars)
 - [ ] CORS origins are correct
 - [ ] Database uses SSL
 - [ ] No hardcoded secrets
@@ -392,7 +389,6 @@ grep "duration" logs
 - [ ] Rate limiting configured
 - [ ] CORS properly set
 - [ ] Environment variables validated
-- [ ] JWT secrets secured
 - [ ] Database SSL enabled
 - [ ] WebSocket security enabled
 

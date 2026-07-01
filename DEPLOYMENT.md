@@ -53,9 +53,6 @@ PORT=5000
 # CORS (comma-separated origins)
 CORS_ORIGIN=https://yourdomain.vercel.app,https://www.yourdomain.com
 
-# Security
-JWT_SECRET=your-super-secret-jwt-key-minimum-32-characters
-
 # WebSocket
 WS_URL=https://your-backend.onrender.com
 ```
@@ -431,7 +428,6 @@ npx prisma migrate reset
 - Use environment variables for secrets
 - Implement rate limiting
 - Enable CORS restrictions
-- Use JWT for authentication (when implemented)
 
 ### Database Security
 - Use connection strings with strong passwords
