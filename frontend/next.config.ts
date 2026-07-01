@@ -27,7 +27,6 @@ const nextConfig: NextConfig = {
   
   // Experimental features
   experimental: {
-    optimizeCss: true,
     optimizePackageImports: ['@monaco-editor/react'],
   },
   
